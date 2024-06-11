@@ -5,31 +5,26 @@
 
 #include <Adafruit_CircuitPlayground.h>
 
-uint8_t colorPattern[25];
-uint8_t skillLevel;            // skill level that the player has selected (1,2,3, or 4)
-uint8_t sequenceLength;        // length of sequence selected by player in the skill level function
-uint8_t currentStep;           //steps of pattern player is currently on
-unsigned long startGuessTime;  // starting the timer in milliseconds for how long player has to guess
-int8_t guess;                  //player guess
-
-const int leftbutton = 4;   //set left button
-const int rightbutton = 5;  //set right button
 int currentIndex = 0;       // set for patterns to be played
-int lightvalue;
+int lightvalue;             //setting light value
 int lightParam;
-
 const int switchPin = 7;       // set switch
 volatile bool switchFlag = 0;  // both for switch working
-volatile bool switchState = 0;
-
+volatile bool switchState = 0; //read switch state
+uint8_t colorPattern[25];      //color pattern can go up to 25- changes amount of colors in the pattern
+uint8_t skillLevel;            // skill level that the player has selected (1,2,3, or 4)
+uint8_t patternLength;        // length of sequence selected by player in the skill level function
+uint8_t currentStep;           //steps of pattern player is currently on
+unsigned long startGuessTime;  // player must guess within time frame- unsigned long only stores positive numbers, which we want the timer to be in
+int8_t guess;                  //player guess
 bool gameRunning = false;  //game is off to begin
 int score = 0;             //score starts at 0
 
-struct button {
-  uint8_t capPad[2];
-  uint8_t pixel[3];
-  uint32_t color;
-  uint16_t freq;
+struct button {//learned from the youtube video linked above-stores many variables in one place- accessed using a dot
+  uint8_t capPad[2];// first member of the structure stores the 2 cap pad sensors- stores using the array
+  uint8_t pixel[3];// stores the 3 pixels that will liogt up using array of the pixels that will light up
+  uint32_t color;// stores the color that the pixels will show
+  uint16_t freq;// the frequency that should play
 } buttonInput[] = {
   { { 3, 2 }, { 0, 1, 2 }, 0x00FF00, 350 },   //cap sensors, pixels, color, tone
   { { 0, 1 }, { 2, 3, 4 }, 0xFFFF00, 250 },   // yellow corenr
@@ -81,85 +76,84 @@ void setup() {
   CircuitPlayground.clearPixels();                                // clear pixels
   CircuitPlayground.setPixelColor(0, 0xFFFFFF);                   // set them black
   attachInterrupt(digitalPinToInterrupt(7), switch_ISR, CHANGE);  // switch interrupt
-  randomSeed(millis());                                           // random seed
+  randomSeed(analogRead(0));                                           // random seed
   shakepattern(500, 10);
-  chooseSkillLevel();  // start the skill level function
+  selectskilllevel();  // start the skill level function
   skillLevel = 1;      // begin it at level 1
-  newGame();           // start a new game
+  game();           // start a new game
 }
 
 void loop() {
 
-  lightvalue = CircuitPlayground.lightSensor();    //reads the light sensor
-  lightParam = map(lightvalue, 0, 1000, 20, 500);  //maps to a better range
+lightvalue = CircuitPlayground.lightSensor();    //reads the light sensor
+lightParam = map(lightvalue, 0, 1000, 20, 500);  //maps to a better range
   if (lightParam > 500)                            //resets it if too high
     lightParam = 500;
 
   switchState = digitalRead(switchPin);  //read the switch state
 
-  if (switchState == 1 && lightvalue > 120) {  //if the switch is on and its light enough then we can play the game
+  if (switchState == 1 && lightvalue >100) {  //if the switch is on and its light enough then we can play the game
     // Show sequence up to current step
-    showSequence();
-    for (int i = 0; i < currentStep; i++) {  // for loop where i is less than the current amount of steps in the pattern being played
+    showpattern();
+    for (int i=0; i< currentStep; i++) {  // for loop where i is less than the current amount of steps in the pattern being played
       startGuessTime = millis();
       guess = -1;
-      while ((millis() - startGuessTime < 3000) && (guess == -1)) {  // if the players guess time is under 3 seconds and the guess is a valid input then we can read the input of the player
+      while ((millis() - startGuessTime < 3000) && (guess == -1)) {  
         guess = getButtonPress();                                    //players guess for what color is next calls function which reads the sensors tapped
       }
-      if (guess != colorPattern[i]) {  // until the guess is incorrect continue
+      if (guess !=colorPattern[i]) { 
         gameLost(colorPattern[i]);     // if the guess is incorrect end the game
       }
     }
-
     currentStep++;              // add one to the current step
-    Serial.print(currentStep);  // display score to serial monitor
-    Serial.println("Your score is: ");
-
-    if (currentStep > sequenceLength) {  //if the amount of steps you are on is greater than the sequence length you selected in the skill level then it beats the game
-      delay(800);                        // short delay
-      gameWon();                         //play the function for winning the game
-    }
-    delay(800);  // wait a bit
+    Serial.print("Your score is: ");
+    Serial.println(currentStep);  // display score to serial monitor
+      if (currentStep >patternLength) {  //if the amount of steps you are on is greater than the sequence length you selected in the skill level then it beats the game
+        delay(800);                        // short delay
+        gameWon();                         //play the function for winning the game
+      }
+    delay(800); 
   } else {
     endGame();  // if the switch is off play the end game function
   }
 }
 
-void chooseSkillLevel() {                     // function for choosing skill level based on how many patterns you want the maximum to be
-  while (!CircuitPlayground.rightButton()) {  // until the right button is pressed you can select what mode you want
-    if (CircuitPlayground.leftButton()) {
+
+void selectskilllevel() {                     // choose skill level
+  while (!CircuitPlayground.leftButton()) {  // until the left button is pressed you can select what mode you want
+    if (CircuitPlayground.rightButton()) {
       skillLevel = skillLevel + 1;         //increment skill levels
-      if (skillLevel > 4) skillLevel = 1;  // if the skill level exceeds case 4, cycle back to case 1
-      // press the left button to add to the skill level until you get to the desired one
+      if (skillLevel > 4) 
+        skillLevel = 1;  // if the skill level exceeds case 4, cycle back to case 1
+      // press the right button to add to the skill level until you get to the desired one
       CircuitPlayground.clearPixels();  //clear pixels
       for (int i = 0; i < skillLevel; i++) {
         CircuitPlayground.setPixelColor(i, 0xFFFFFF);  //set pixel colors white
       }
-
       delay(250);  //debounce
     }
   }
 }
-void newGame() {  // initialize the game
+void game() {  // initialize the game
   // Set game sequence length based on desired skill level
   switch (skillLevel) {
     case 1:
-      sequenceLength = 5;  //easy mode
+      patternLength = 6;  //easy mode
       break;
     case 2:
-      sequenceLength = 10;  //medium
+      patternLength = 12;  //medium
       break;
     case 3:
-      sequenceLength = 15;  //difficult
+      patternLength = 18;  //difficult
       break;
     case 4:
-      sequenceLength = 20;  //expert level
+      patternLength = 24;  //expert level
       break;
   }
-  for (int i = 0; i < sequenceLength; i++) {
+  for (int i=0; i<patternLength; i++) {
     colorPattern[i] = random(4);  // choose one of the colors to display
   }
-  currentStep = 1;  // start the game on step 1
+  currentStep =1; 
 }
 void showbuttonPressed(uint8_t b, uint16_t duration) {  // this one shows the button that was pressed
   CircuitPlayground.clearPixels();
@@ -169,17 +163,17 @@ void showbuttonPressed(uint8_t b, uint16_t duration) {  // this one shows the bu
   CircuitPlayground.playTone(buttonInput[b].freq, duration);// matches it to the frequency it should be and how long it should play
   CircuitPlayground.clearPixels();
 }
-
-  // Play back sequence up to current step
-  for (int i = 0; i < currentStep; i++) {
+void showpattern() { 
+  for (int i= 0; i <currentStep; i++) {
     delay(50);
-    showbuttonPressed(colorPattern[i], toneDuration);
+    showbuttonPressed(colorPattern[i], 400);
   }
+  gameRunning=true;
 }
 uint8_t getButtonPress() {
   for (int i = 0; i < 4; i++) {
     for (int j = 0; j < 2; j++) {
-      if (CircuitPlayground.readCap(buttonInput[i].capPad[j]) > 600) {
+      if (CircuitPlayground.readCap(buttonInput[i].capPad[j]) > 600) {//600 is the cap threshhold for how hard to hit it
         showbuttonPressed(i, 250);
         return i;
       }
@@ -187,19 +181,17 @@ uint8_t getButtonPress() {
   }
   return -1;
 }
-void gameLost(int b) {  //game lost pattern
+void gameLost(int b){  //game lost pattern
   // Show button that should have been pressed
-  for (int i = 0; i < 3; i++) {
-    CircuitPlayground.setPixelColor(buttonInput[b].pixel[i], buttonInput[b].color);  //sets the pixel color to what should have been pressed, first argument is which pixels to light up, second is what color they should be
-  }
-  // play a losing sound
   CircuitPlayground.playTone(100, 1500);
-
-  // wait until game is reset using the reset button
+  for (int i=0; i<3; i++) {
+    CircuitPlayground.setPixelColor(buttonInput[b].pixel[i], buttonInput[b].color);
+  }
   while (true) {}
 }
 void gameWon() {  //game winning pattern
-  for (int i = 0; i < 3; i++) {
+  Serial.print("Congrats you won!");
+  for (int i = 0; i < 10; i++) {
     clover(500, 10);
   }
   // Loop lights forever
@@ -237,14 +229,3 @@ void clover(int currentSpeed, int stripLen) {
   currentIndex = (currentIndex + 1) % 10;  // Move to the next color
   delay(300);
 }
-void showSequence() {  //speeds the tone up as the levels of difficulty increase
-  // Set tone playback duration based on current sequence length
-  uint16_t toneDuration;
-  if (currentStep <= 5) {
-    toneDuration = 400;
-  } else if (currentStep <= 10) {
-    toneDuration = 300;
-  } else {
-    toneDuration = 200;
-  }
-
